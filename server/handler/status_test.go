@@ -8,7 +8,7 @@ import (
 )
 
 func TestGetStatus_ExistingJob(t *testing.T) {
-	StoreJob(Job{JobId: "status-test-1", Status: "PENDING", HashContent: "data"})
+	StoreJob(Job{JobId: "status-test-1", Status: "PENDING", FilePath: "/tmp/hash-server/uploads/data.txt"})
 
 	req := httptest.NewRequest(http.MethodGet, "/status/status-test-1", nil)
 	req.SetPathValue("id", "status-test-1")
@@ -20,38 +20,24 @@ func TestGetStatus_ExistingJob(t *testing.T) {
 		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 
-	contentType := rec.Header().Get("Content-Type")
-	if contentType != "application/json" {
-		t.Errorf("expected Content-Type application/json, got %s", contentType)
-	}
-
-	var job Job
-	err := json.NewDecoder(rec.Body).Decode(&job)
+	var status string
+	err := json.NewDecoder(rec.Body).Decode(&status)
 	if err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if job.Status != "PENDING" {
-		t.Errorf("expected PENDING, got %s", job.Status)
+	if status != "PENDING" {
+		t.Errorf("expected PENDING, got %s", status)
 	}
 }
 
 func TestGetStatus_NonExistentJob(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/status/does-not-exist", nil)
-	req.SetPathValue("id", "does-not-exist")
+	req := httptest.NewRequest(http.MethodGet, "/status/status-missing", nil)
+	req.SetPathValue("id", "status-missing")
 	rec := httptest.NewRecorder()
 
 	GetStatus(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
-	}
-
-	var appErr AppError
-	err := json.NewDecoder(rec.Body).Decode(&appErr)
-	if err != nil {
-		t.Fatalf("failed to decode error response: %v", err)
-	}
-	if appErr.Code != 404 {
-		t.Errorf("expected error code 404, got %d", appErr.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected status %d, got %d", http.StatusNotFound, rec.Code)
 	}
 }

@@ -4,12 +4,35 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
+func setupTestFile(t *testing.T, content string) string {
+	t.Helper()
+	os.MkdirAll(allowedBaseDir, 0755)
+	f, err := os.CreateTemp(allowedBaseDir, "test-*.txt")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	f.WriteString(content)
+	f.Close()
+	t.Cleanup(func() { os.Remove(f.Name()) })
+	return f.Name()
+}
+
+func TestMain(m *testing.M) {
+	StartWorkerPool(2, 10)
+	code := m.Run()
+	StopWorkerPool()
+	os.Exit(code)
+}
+
 func TestProcessFile_ValidInput(t *testing.T) {
-	body := `{"content":"hello world"}`
+	path := setupTestFile(t, "hello world")
+	body := `{"filepath":"` + path + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -35,13 +58,14 @@ func TestProcessFile_ValidInput(t *testing.T) {
 	if job.Status != "PENDING" {
 		t.Errorf("expected status PENDING, got %s", job.Status)
 	}
-	if job.HashContent != "hello world" {
-		t.Errorf("expected HashContent 'hello world', got %s", job.HashContent)
+	if job.FilePath != path {
+		t.Errorf("expected FilePath '%s', got %s", path, job.FilePath)
 	}
 }
 
 func TestProcessFile_StoresJob(t *testing.T) {
-	body := `{"content":"hash me"}`
+	path := setupTestFile(t, "hash me")
+	body := `{"filepath":"` + path + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -57,8 +81,8 @@ func TestProcessFile_StoresJob(t *testing.T) {
 	if stored.Status != "PENDING" {
 		t.Errorf("expected status PENDING, got %s", stored.Status)
 	}
-	if stored.HashContent != "hash me" {
-		t.Errorf("expected HashContent 'hash me', got %s", stored.HashContent)
+	if stored.FilePath != path {
+		t.Errorf("expected FilePath '%s', got %s", path, stored.FilePath)
 	}
 }
 
@@ -76,6 +100,42 @@ func TestProcessFile_InvalidJSON(t *testing.T) {
 
 func TestProcessFile_EmptyBody(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/upload", nil)
+	rec := httptest.NewRecorder()
+
+	ProcessFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestProcessFile_PathOutsideAllowed(t *testing.T) {
+	body := `{"filepath":"/etc/passwd"}`
+	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	ProcessFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestProcessFile_PathTraversal(t *testing.T) {
+	body := `{"filepath":"` + filepath.Join(allowedBaseDir, "../../etc/passwd") + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	ProcessFile(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestProcessFile_FileDoesNotExist(t *testing.T) {
+	body := `{"filepath":"` + filepath.Join(allowedBaseDir, "nonexistent.txt") + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/upload", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
 	ProcessFile(rec, req)

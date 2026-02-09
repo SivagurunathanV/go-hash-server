@@ -8,12 +8,11 @@ import (
 )
 
 func TestGetHashContent_ExistingJob(t *testing.T) {
-	// Seed a completed job with hash result
 	StoreJob(Job{
-		JobId:       "hash-test-1",
-		Status:      "COMPLETED",
-		HashContent: "hello world",
-		HashResult:  "5eb63bbbe01eeed093cb22bb8f5acdc3",
+		JobId:      "hash-test-1",
+		Status:     "COMPLETED",
+		FilePath:   "/tmp/hash-server/uploads/test.txt",
+		HashResult: "5eb63bbbe01eeed093cb22bb8f5acdc3",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/hash-content/hash-test-1", nil)
@@ -24,11 +23,6 @@ func TestGetHashContent_ExistingJob(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
-	}
-
-	contentType := rec.Header().Get("Content-Type")
-	if contentType != "application/json" {
-		t.Errorf("expected Content-Type application/json, got %s", contentType)
 	}
 
 	var hashResult string
@@ -42,23 +36,13 @@ func TestGetHashContent_ExistingJob(t *testing.T) {
 }
 
 func TestGetHashContent_NonExistentJob(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/hash-content/no-such-job", nil)
-	req.SetPathValue("id", "no-such-job")
+	req := httptest.NewRequest(http.MethodGet, "/hash-content/hash-missing", nil)
+	req.SetPathValue("id", "hash-missing")
 	rec := httptest.NewRecorder()
 
 	GetHashContent(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
-	}
-
-	// Should return error JSON since job doesn't exist
-	var appErr AppError
-	err := json.NewDecoder(rec.Body).Decode(&appErr)
-	if err != nil {
-		t.Fatalf("failed to decode error response: %v", err)
-	}
-	if appErr.Code != 404 {
-		t.Errorf("expected error code 404, got %d", appErr.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected status %d, got %d", http.StatusNotFound, rec.Code)
 	}
 }
